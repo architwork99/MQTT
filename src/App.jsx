@@ -352,29 +352,85 @@ function App() {
     }
   }
 
-  // Load example JSON
-  const loadExampleJson = () => {
-    const example = {
-      ts: Date.now() / 1000,
-      count: 1,
-      targets: [
-        {
-          lat: 19.008600,
-          lon: 73.130071,
-          src_lat: 19.008563,
-          src_lon: 73.130071,
-          heading: 359.5,
-          pitch: -3.875,
-          roll: 2.125,
-          distance_m: 4.1,
-          ts: Date.now() / 1000,
-          image: "https://res.cloudinary.com/drxofvjbi/image/upload/v1234567890/sample.jpg"
-        }
-      ]
+  // Cloudinary image URLs for CoT generation
+  const COT_IMAGES = [
+    'https://res.cloudinary.com/drxofvjbi/image/upload/v1771139514/samples/animals/cat.jpg',
+    'https://res.cloudinary.com/drxofvjbi/image/upload/v1771139516/samples/animals/reindeer.jpg',
+    'https://res.cloudinary.com/drxofvjbi/image/upload/v1771139518/samples/landscapes/architecture-signs.jpg',
+    'https://res.cloudinary.com/drxofvjbi/image/upload/v1771139519/samples/landscapes/beach-boat.jpg',
+    'https://res.cloudinary.com/drxofvjbi/image/upload/v1771139526/samples/balloons.jpg',
+    'https://res.cloudinary.com/drxofvjbi/video/upload/v1771139522/samples/elephants.mp4'
+  ]
+
+  // Generate realistic CoT data
+  const generateCoT = () => {
+    // Random coordinates around Arabian Sea / Indian Ocean region
+    const baseLatitudes = [15.0, 18.5, 19.0, 20.5, 22.0, 12.5, 16.8]
+    const baseLongitudes = [68.0, 70.5, 72.8, 73.1, 75.3, 77.5, 69.2]
+
+    const randomLat = baseLatitudes[Math.floor(Math.random() * baseLatitudes.length)] + (Math.random() - 0.5) * 0.1
+    const randomLon = baseLongitudes[Math.floor(Math.random() * baseLongitudes.length)] + (Math.random() - 0.5) * 0.1
+
+    // Small offset for src coordinates (simulating device location vs target location)
+    const srcLat = randomLat + (Math.random() - 0.5) * 0.001
+    const srcLon = randomLon + (Math.random() - 0.5) * 0.001
+
+    // Random number of targets (1-3)
+    const targetCount = Math.floor(Math.random() * 3) + 1
+    const targets = []
+
+    for (let i = 0; i < targetCount; i++) {
+      const targetLat = randomLat + (Math.random() - 0.5) * 0.05
+      const targetLon = randomLon + (Math.random() - 0.5) * 0.05
+
+      targets.push({
+        lat: parseFloat(targetLat.toFixed(6)),
+        lon: parseFloat(targetLon.toFixed(6)),
+        src_lat: parseFloat(srcLat.toFixed(6)),
+        src_lon: parseFloat(srcLon.toFixed(6)),
+        heading: parseFloat((Math.random() * 360).toFixed(1)),
+        pitch: parseFloat((Math.random() * 20 - 10).toFixed(3)),
+        roll: parseFloat((Math.random() * 6 - 3).toFixed(3)),
+        distance_m: parseFloat((Math.random() * 4990 + 10).toFixed(1)),
+        ts: (Date.now() / 1000) - Math.random() * 300, // Random time within last 5 minutes
+        image: COT_IMAGES[Math.floor(Math.random() * COT_IMAGES.length)]
+      })
     }
-    setRawJson(JSON.stringify(example, null, 2))
-    setJsonStatus({ type: 'success', message: '✓ Example loaded' })
+
+    const cotData = {
+      ts: Date.now() / 1000,
+      count: targetCount,
+      targets: targets
+    }
+
+    setRawJson(JSON.stringify(cotData, null, 2))
+    setJsonStatus({ type: 'success', message: `✓ Generated ${targetCount} target(s)` })
     setTimeout(() => setJsonStatus(null), 2000)
+  }
+
+  // Copy JSON to clipboard
+  const copyToClipboard = async () => {
+    if (!rawJson) return
+
+    try {
+      await navigator.clipboard.writeText(rawJson)
+      setJsonStatus({ type: 'success', message: '✓ Copied to clipboard!' })
+      setTimeout(() => setJsonStatus(null), 2000)
+    } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = rawJson
+      document.body.appendChild(textArea)
+      textArea.select()
+      try {
+        document.execCommand('copy')
+        setJsonStatus({ type: 'success', message: '✓ Copied to clipboard!' })
+      } catch (err) {
+        setJsonStatus({ type: 'error', message: 'Failed to copy' })
+      }
+      document.body.removeChild(textArea)
+      setTimeout(() => setJsonStatus(null), 2000)
+    }
   }
 
   return (
@@ -434,19 +490,26 @@ function App() {
             </p>
 
             {/* Action Buttons */}
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4 flex-wrap">
               <button
-                onClick={loadExampleJson}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
+                onClick={generateCoT}
+                className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 rounded text-sm font-bold transition-colors shadow-md"
               >
-                📋 Load Example
+                🎲 Generate CoT
+              </button>
+              <button
+                onClick={copyToClipboard}
+                disabled={!rawJson}
+                className="px-4 py-2 bg-green-700 hover:bg-green-600 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                📋 Copy
               </button>
               <button
                 onClick={formatJson}
                 disabled={!rawJson}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                ✨ Format JSON
+                ✨ Format
               </button>
               <button
                 onClick={() => setRawJson('')}
