@@ -24,6 +24,11 @@ function App() {
   const [gyroPermission, setGyroPermission] = useState('checking') // checking, granted, denied, not-supported
   const [gyroError, setGyroError] = useState(null)
 
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [rawJson, setRawJson] = useState('')
+  const [jsonSubmitting, setJsonSubmitting] = useState(false)
+  const [jsonStatus, setJsonStatus] = useState(null)
+
   // Get GPS location on mount
   useEffect(() => {
     getGPSLocation()
@@ -283,6 +288,93 @@ function App() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  // Format JSON for display
+  const formatJson = () => {
+    try {
+      const parsed = JSON.parse(rawJson)
+      const formatted = JSON.stringify(parsed, null, 2)
+      setRawJson(formatted)
+      setJsonStatus({ type: 'success', message: '✓ JSON formatted' })
+      setTimeout(() => setJsonStatus(null), 2000)
+    } catch (error) {
+      setJsonStatus({ type: 'error', message: 'Invalid JSON format' })
+    }
+  }
+
+  // Submit raw JSON
+  const handleJsonSubmit = async () => {
+    setJsonSubmitting(true)
+    setJsonStatus(null)
+
+    try {
+      // Validate JSON
+      let payload
+      try {
+        payload = JSON.parse(rawJson)
+      } catch (error) {
+        throw new Error('Invalid JSON format. Please check your input.')
+      }
+
+      // Submit to API
+      const response = await fetch('/api/submit-raw-json', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setJsonStatus({
+          type: 'success',
+          message: `✓ ${result.message || 'JSON submitted successfully!'}`
+        })
+
+        // Clear after 3 seconds
+        setTimeout(() => {
+          setRawJson('')
+          setJsonStatus(null)
+        }, 3000)
+      } else {
+        throw new Error(result.error || 'Submission failed')
+      }
+    } catch (error) {
+      setJsonStatus({
+        type: 'error',
+        message: `Error: ${error.message}`
+      })
+    } finally {
+      setJsonSubmitting(false)
+    }
+  }
+
+  // Load example JSON
+  const loadExampleJson = () => {
+    const example = {
+      ts: Date.now() / 1000,
+      count: 1,
+      targets: [
+        {
+          lat: 19.008600,
+          lon: 73.130071,
+          src_lat: 19.008563,
+          src_lon: 73.130071,
+          heading: 359.5,
+          pitch: -3.875,
+          roll: 2.125,
+          distance_m: 4.1,
+          ts: Date.now() / 1000,
+          image: "https://res.cloudinary.com/drxofvjbi/image/upload/v1234567890/sample.jpg"
+        }
+      ]
+    }
+    setRawJson(JSON.stringify(example, null, 2))
+    setJsonStatus({ type: 'success', message: '✓ Example loaded' })
+    setTimeout(() => setJsonStatus(null), 2000)
   }
 
   return (
@@ -575,6 +667,113 @@ function App() {
             </div>
           )}
         </form>
+
+        {/* Advanced: Raw JSON Mode */}
+        <div className="bg-slate-800 rounded-lg border border-slate-700 mb-6 overflow-hidden">
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="w-full p-4 flex items-center justify-between hover:bg-slate-700/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">⚙️</span>
+              <h2 className="text-lg font-semibold text-slate-200">
+                Advanced: Send Raw JSON
+              </h2>
+            </div>
+            <span className="text-slate-400 text-xl">
+              {showAdvanced ? '−' : '+'}
+            </span>
+          </button>
+
+          {showAdvanced && (
+            <div className="p-4 border-t border-slate-700">
+              <p className="text-slate-400 text-sm mb-4">
+                Paste a complete MQTT JSON payload to send directly to the broker.
+                Useful for testing and bulk submissions.
+              </p>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={loadExampleJson}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
+                >
+                  📋 Load Example
+                </button>
+                <button
+                  onClick={formatJson}
+                  disabled={!rawJson}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ✨ Format JSON
+                </button>
+                <button
+                  onClick={() => setRawJson('')}
+                  disabled={!rawJson}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  🗑️ Clear
+                </button>
+              </div>
+
+              {/* JSON Textarea */}
+              <div className="relative">
+                <textarea
+                  value={rawJson}
+                  onChange={(e) => setRawJson(e.target.value)}
+                  placeholder={`Paste your JSON here, for example:\n{\n  "ts": 1771045222.178,\n  "count": 1,\n  "targets": [\n    {\n      "lat": 19.0086,\n      "lon": 73.1301,\n      "heading": 359.5,\n      "pitch": -3.875,\n      "roll": 2.125,\n      "distance_m": 4.1,\n      "image": "https://..."\n    }\n  ]\n}`}
+                  className="w-full h-64 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-sky-500 resize-none"
+                  spellCheck="false"
+                />
+                {rawJson && (
+                  <div className="absolute top-2 right-2 text-xs text-slate-500">
+                    {rawJson.length} chars
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Button */}
+              <button
+                onClick={handleJsonSubmit}
+                disabled={jsonSubmitting || !rawJson}
+                className="w-full mt-4 py-4 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg font-bold text-white text-lg transition-colors shadow-lg active:bg-orange-700"
+              >
+                {jsonSubmitting ? '⏳ Sending...' : '🚀 Send Raw JSON to MQTT'}
+              </button>
+
+              {/* Status Message */}
+              {jsonStatus && (
+                <div
+                  className={`mt-4 p-4 rounded-lg text-center font-semibold ${
+                    jsonStatus.type === 'success'
+                      ? 'bg-green-900/50 text-green-300 border border-green-700'
+                      : 'bg-red-900/50 text-red-300 border border-red-700'
+                  }`}
+                >
+                  {jsonStatus.message}
+                </div>
+              )}
+
+              {/* Help Text */}
+              <div className="mt-4 p-3 bg-slate-900/50 rounded-lg border border-slate-700">
+                <p className="text-slate-400 text-xs mb-2">
+                  <strong className="text-slate-300">Required fields per target:</strong>
+                </p>
+                <ul className="text-slate-400 text-xs space-y-1 ml-4">
+                  <li>• <code className="text-sky-400">lat</code> - Latitude (number)</li>
+                  <li>• <code className="text-sky-400">lon</code> - Longitude (number)</li>
+                  <li>• <code className="text-sky-400">heading</code> - Heading in degrees (0-360)</li>
+                  <li>• <code className="text-sky-400">pitch</code> - Pitch in degrees (-180 to 180)</li>
+                  <li>• <code className="text-sky-400">roll</code> - Roll in degrees (-90 to 90)</li>
+                  <li>• <code className="text-sky-400">distance_m</code> - Distance in meters</li>
+                </ul>
+                <p className="text-slate-400 text-xs mt-2">
+                  <strong className="text-slate-300">Optional fields:</strong> <code className="text-slate-500">image</code>, <code className="text-slate-500">ts</code>, <code className="text-slate-500">src_lat</code>, <code className="text-slate-500">src_lon</code>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Info Footer */}
         <div className="text-center text-slate-500 text-xs">
