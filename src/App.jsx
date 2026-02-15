@@ -20,9 +20,23 @@ function App() {
   const [submitting, setSubmitting] = useState(false)
   const [submitStatus, setSubmitStatus] = useState(null)
 
+  const [gyroData, setGyroData] = useState(null)
+  const [gyroPermission, setGyroPermission] = useState('checking') // checking, granted, denied, not-supported
+  const [gyroError, setGyroError] = useState(null)
+
   // Get GPS location on mount
   useEffect(() => {
     getGPSLocation()
+  }, [])
+
+  // Initialize gyroscope on mount
+  useEffect(() => {
+    initializeGyroscope()
+
+    return () => {
+      // Cleanup: remove event listener
+      window.removeEventListener('deviceorientation', handleOrientation)
+    }
   }, [])
 
   const getGPSLocation = () => {
@@ -66,6 +80,74 @@ function App() {
         maximumAge: 0
       }
     )
+  }
+
+  // Initialize gyroscope/orientation sensors
+  const initializeGyroscope = async () => {
+    if (!window.DeviceOrientationEvent) {
+      setGyroPermission('not-supported')
+      setGyroError('Device orientation not supported on this device')
+      return
+    }
+
+    // For iOS 13+ devices, need to request permission
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      setGyroPermission('checking')
+    } else {
+      // Android and older iOS - start listening immediately
+      startGyroscope()
+    }
+  }
+
+  // Request permission (iOS 13+)
+  const requestGyroPermission = async () => {
+    try {
+      const permission = await DeviceOrientationEvent.requestPermission()
+      if (permission === 'granted') {
+        setGyroPermission('granted')
+        startGyroscope()
+      } else {
+        setGyroPermission('denied')
+        setGyroError('Gyroscope permission denied. Please enable in settings.')
+      }
+    } catch (error) {
+      setGyroPermission('denied')
+      setGyroError('Error requesting gyroscope permission: ' + error.message)
+    }
+  }
+
+  // Start listening to orientation events
+  const startGyroscope = () => {
+    setGyroPermission('granted')
+    setGyroError(null)
+    window.addEventListener('deviceorientation', handleOrientation, true)
+  }
+
+  // Handle orientation event
+  const handleOrientation = (event) => {
+    const { alpha, beta, gamma } = event
+
+    // alpha: 0-360 (compass heading)
+    // beta: -180 to 180 (pitch - front/back tilt)
+    // gamma: -90 to 90 (roll - left/right tilt)
+
+    if (alpha !== null && beta !== null && gamma !== null) {
+      const gyroValues = {
+        heading: parseFloat(alpha.toFixed(1)),
+        pitch: parseFloat(beta.toFixed(1)),
+        roll: parseFloat(gamma.toFixed(1))
+      }
+
+      setGyroData(gyroValues)
+
+      // Auto-update target data with gyroscope values
+      setTargetData(prev => ({
+        ...prev,
+        heading: gyroValues.heading,
+        pitch: gyroValues.pitch,
+        roll: gyroValues.roll
+      }))
+    }
   }
 
   // Handle camera capture
@@ -263,6 +345,81 @@ function App() {
           )}
         </div>
 
+        {/* Gyroscope Status */}
+        <div className="bg-slate-800 rounded-lg p-4 mb-6 border border-slate-700">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-semibold text-slate-200">
+              🧭 Gyroscope / Orientation
+            </h2>
+            {gyroPermission === 'checking' && (
+              <button
+                onClick={requestGyroPermission}
+                className="px-3 py-1 bg-sky-600 hover:bg-sky-500 rounded text-sm font-semibold"
+              >
+                Enable
+              </button>
+            )}
+            {gyroData && (
+              <span className="text-green-400 text-sm">● Live</span>
+            )}
+          </div>
+
+          {gyroPermission === 'not-supported' && (
+            <p className="text-yellow-400 text-sm">{gyroError}</p>
+          )}
+
+          {gyroPermission === 'denied' && (
+            <p className="text-red-400 text-sm">{gyroError}</p>
+          )}
+
+          {gyroPermission === 'checking' && (
+            <p className="text-slate-400 text-sm">
+              Tap <strong>Enable</strong> to allow gyroscope access
+            </p>
+          )}
+
+          {gyroPermission === 'granted' && !gyroData && (
+            <p className="text-slate-400 text-sm">Waiting for sensor data...</p>
+          )}
+
+          {gyroData && (
+            <div className="grid grid-cols-1 gap-3 text-sm">
+              {/* Heading */}
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-medium">Heading (α)</span>
+                  <span className="text-2xl font-bold text-sky-400 font-mono">
+                    {gyroData.heading}°
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">Compass direction (0-360°)</div>
+              </div>
+
+              {/* Pitch */}
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-medium">Pitch (β)</span>
+                  <span className="text-2xl font-bold text-green-400 font-mono">
+                    {gyroData.pitch}°
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">Front/back tilt (-180 to 180°)</div>
+              </div>
+
+              {/* Roll */}
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-medium">Roll (γ)</span>
+                  <span className="text-2xl font-bold text-purple-400 font-mono">
+                    {gyroData.roll}°
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">Left/right tilt (-90 to 90°)</div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Image Capture */}
         <div className="bg-slate-800 rounded-lg p-4 mb-6 border border-slate-700">
           <h2 className="text-lg font-semibold text-slate-200 mb-4">
@@ -324,10 +481,18 @@ function App() {
             🎯 Target Data
           </h2>
 
+          {gyroData && (
+            <div className="mb-4 p-3 bg-green-900/20 border border-green-700/50 rounded-lg">
+              <p className="text-green-400 text-sm text-center">
+                ✓ Gyroscope active - Heading, Pitch, Roll auto-updating
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-slate-300 text-sm font-medium mb-2">
-                Heading (degrees)
+                Heading (degrees) {gyroData && <span className="text-sky-400">● Auto</span>}
               </label>
               <input
                 type="number"
@@ -336,13 +501,14 @@ function App() {
                 step="0.1"
                 value={targetData.heading}
                 onChange={(e) => handleInputChange('heading', e.target.value)}
-                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white text-lg focus:outline-none focus:border-sky-500"
+                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white text-lg focus:outline-none focus:border-sky-500 font-mono"
+                readOnly={gyroData !== null}
               />
             </div>
 
             <div>
               <label className="block text-slate-300 text-sm font-medium mb-2">
-                Pitch (degrees)
+                Pitch (degrees) {gyroData && <span className="text-green-400">● Auto</span>}
               </label>
               <input
                 type="number"
@@ -351,13 +517,14 @@ function App() {
                 step="0.1"
                 value={targetData.pitch}
                 onChange={(e) => handleInputChange('pitch', e.target.value)}
-                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white text-lg focus:outline-none focus:border-sky-500"
+                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white text-lg focus:outline-none focus:border-sky-500 font-mono"
+                readOnly={gyroData !== null}
               />
             </div>
 
             <div>
               <label className="block text-slate-300 text-sm font-medium mb-2">
-                Roll (degrees)
+                Roll (degrees) {gyroData && <span className="text-purple-400">● Auto</span>}
               </label>
               <input
                 type="number"
@@ -366,7 +533,8 @@ function App() {
                 step="0.1"
                 value={targetData.roll}
                 onChange={(e) => handleInputChange('roll', e.target.value)}
-                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white text-lg focus:outline-none focus:border-sky-500"
+                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white text-lg focus:outline-none focus:border-sky-500 font-mono"
+                readOnly={gyroData !== null}
               />
             </div>
 
